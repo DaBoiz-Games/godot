@@ -751,17 +751,21 @@ void DisplayServerWeb::_touch_callback(int p_type, int p_count) {
 	const JSTouchEvent &touch_event = ds->touch_event;
 	for (int i = 0; i < p_count; i++) {
 		Point2 point(touch_event.coords[i * 2], touch_event.coords[i * 2 + 1]);
+		const uint32_t touch_id = touch_event.identifier[i];
 		if (p_type == 2) {
 			// touchmove
 			Ref<InputEventScreenDrag> ev;
 			ev.instantiate();
-			ev->set_index(touch_event.identifier[i]);
+			ev->set_index(touch_id);
 			ev->set_position(point);
 
-			Point2 &prev = ds->touches[i];
-			ev->set_relative(ev->get_position() - prev);
+			// Compare with this finger's own previous position. `i` is only the
+			// finger's slot in this event's changedTouches list, which changes
+			// between events when several fingers are down.
+			HashMap<uint32_t, Point2>::Iterator prev = ds->touches.find(touch_id);
+			ev->set_relative(prev ? point - prev->value : Vector2());
 			ev->set_relative_screen_position(ev->get_relative());
-			prev = ev->get_position();
+			ds->touches[touch_id] = point;
 
 			Input::get_singleton()->parse_input_event(ev);
 		} else {
@@ -772,10 +776,14 @@ void DisplayServerWeb::_touch_callback(int p_type, int p_count) {
 			OS_Web::get_singleton()->resume_audio();
 
 			ev.instantiate();
-			ev->set_index(touch_event.identifier[i]);
+			ev->set_index(touch_id);
 			ev->set_position(point);
 			ev->set_pressed(p_type == 0);
-			ds->touches[i] = point;
+			if (p_type == 0) {
+				ds->touches[touch_id] = point;
+			} else {
+				ds->touches.erase(touch_id);
+			}
 
 			Input::get_singleton()->parse_input_event(ev);
 
